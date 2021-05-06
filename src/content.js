@@ -14,7 +14,7 @@
 import './content.css';
 
 import { getListableRootElement, isListableSite, parseElement, parseQueryParams } from './helpers/parse';
-import { Checklist, ChecklistItem } from './Checklist';
+import { Checklist, ChecklistItem } from './checklist';
 
 const STORAGE_KEY = '__LISTIFY__CHECKLIST_ITEMS';
 const STORAGE_COUNT_KEY = '__LISTIFY__CHECKLIST_COUNT';
@@ -22,19 +22,20 @@ const STORAGE_COUNT_KEY = '__LISTIFY__CHECKLIST_COUNT';
 const current = window.location.hostname;
 const params = parseQueryParams();
 
-// the CheckList items
-const checklist = loadChecklist();
-
 const isListable = isListableSite(current, params);
 
 if (isListable) {
   console.info('Valid Listable site');
-
-  populateChecklistFromPage();
-  embellishPageWithChecklistItems();
 }
 
-function populateChecklistFromPage() {
+loadChecklist().then(checklist => {
+  if (isListable) {
+    populateChecklistFromPage(checklist);
+    embellishPageWithChecklistItems(checklist);
+  }
+});
+
+function populateChecklistFromPage(checklist) {
   const listableRoot = getListableRootElement(current);
   if (listableRoot) {
     for (const item of listableRoot.children) {
@@ -45,10 +46,7 @@ function populateChecklistFromPage() {
           ChecklistItem({ content })
         );
 
-        window.localStorage.setItem(
-          STORAGE_COUNT_KEY,
-          checklist.counter.toString(),
-        );
+        sendSaveMessage(STORAGE_COUNT_KEY, checklist.counter);
 
       } catch (err) {
         console.warn('Encountered an error while trying to scrape search result', err.message);
@@ -59,7 +57,7 @@ function populateChecklistFromPage() {
   }
 }
 
-function embellishPageWithChecklistItems() {
+function embellishPageWithChecklistItems(checklist) {
   const listableRoot = getListableRootElement(current);
 
   if (listableRoot) {
@@ -95,6 +93,7 @@ function embellishPageWithChecklistItems() {
           handleCheckboxChange(
             event,
             item,
+            checklist,
             checklistItem
           )
         );
@@ -114,6 +113,7 @@ function embellishPageWithChecklistItems() {
           handleTextareaChange(
             event,
             item,
+            checklist,
             checklistItem
           )
         );
@@ -136,7 +136,7 @@ function embellishPageWithChecklistItems() {
   }
 }
 
-function handleCheckboxChange(event, element, checklistItem) {
+function handleCheckboxChange(event, element, checklist, checklistItem) {
   if (event.target.checked) {
     element.style.textDecoration = 'line-through';
   } else {
@@ -145,63 +145,85 @@ function handleCheckboxChange(event, element, checklistItem) {
 
   checklist.markCompleted(checklistItem, event.target.checked);
 
-  window.localStorage.setItem(
+  sendSaveMessage(
     STORAGE_KEY,
-    JSON.stringify(checklist.getItems()),
+    checklist.getItems(),
   );
 }
 
-function handleTextareaChange(event, element, checklistItem) {
+function handleTextareaChange(event, element, checklist, checklistItem) {
   checklist.updateNotes(checklistItem, event.target.value);
 
-  window.localStorage.setItem(
+  sendSaveMessage(
     STORAGE_KEY,
-    JSON.stringify(checklist.getItems()),
+    checklist.getItems(),
   );
 }
 
-function loadChecklist() {
-  const counter = loadCounterFromStorage();
-  const items = window.localStorage.getItem(STORAGE_KEY);
+async function loadChecklist() {
+  const counter = await loadCounterFromStorage();
+  const items = await loadChecklistFromStorage(STORAGE_KEY);
 
   if (items) {
-    return new Checklist(JSON.parse(items), counter);
+    return new Checklist(items, counter);
   } else {
     return new Checklist([], counter);
   }
 }
 
-function loadCounterFromStorage() {
-  let counter = window.localStorage.getItem(STORAGE_COUNT_KEY);
+async function loadChecklistFromStorage() {
+  const items = await getStoredValue(STORAGE_KEY);
+
+  if (items) {
+    return items;
+  } else {
+    return null;
+  }
+}
+
+async function loadCounterFromStorage() {
+  let counter = await getStoredValue(STORAGE_COUNT_KEY);
 
   if (counter) {
-    return parseInt(counter);
+    return counter;
   } else {
     return 1;
   }
 }
 
-// Communicate with background file by sending a message
-chrome.runtime.sendMessage(
-  {
-    type: 'GREETINGS',
-    payload: {
-      message: 'Hello, my name is Con. I am from ContentScript.',
-    },
-  },
-  response => {
-    console.log(response.message);
-  }
-);
+async function getStoredValue(key) {
+  return await sendRetrieveMessage(key);
+}
 
-// Listen for message
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.type === 'COUNT') {
-    console.log(`Current count is ${request.payload.count}`);
-  }
+function sendRetrieveMessage(key) {
+  return new Promise(resolve => {
+    chrome.runtime.sendMessage(
+      {
+        type: 'RETRIEVE',
+        payload: {
+          key,
+        }
+      },
+      response => {
+        resolve(response);
+      }
+    )
+  });
+}
 
-  // Send an empty response
-  // See https://github.com/mozilla/webextension-polyfill/issues/130#issuecomment-531531890
-  sendResponse({});
-  return true;
-});
+function sendSaveMessage(key, value) {
+  return new Promise(resolve => {
+    chrome.runtime.sendMessage(
+      {
+        type: 'SAVE',
+        payload: {
+          key,
+          value
+        },
+      },
+      response => {
+        console.info('Successfully saved Listify checklist');
+      }
+    );
+  });
+}
