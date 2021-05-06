@@ -27,21 +27,30 @@ export function isListableSite(hostname, params) {
 }
 
 export function parseElement(element, strategy) {
+  const filterReg = new RegExp(
+    /(Looking\sfor\ssomething\sdifferent\?)|(Can't\sfind\swhat\syou\sare\slooking\sfor\?)/,
+    'i'
+  );
+
   switch (strategy) {
     default:
       const raw = element.innerText;
-      const lines = (
-        raw
-          .split('\n')
-          .map(line => line.trim())
-          .filter(filterLine)
-      );
+      if (filterReg.test(raw)) {
+        const lines = (
+          raw
+            .split('\n')
+            .map(line => line.trim())
+            .filter(filterLine)
+        );
 
-      return {
-        raw,
-        lines,
-        text: lines.join(' '),
-      };
+        return {
+          raw,
+          lines,
+          text: lines.join(' '),
+        };
+      } else {
+        return null;
+      }
   }
 }
 

@@ -13,11 +13,12 @@
 
 import './content.css';
 
-import { getListableRootElement, isListableSite, parseElement, parseQueryParams } from './helpers/parse';
-import { Checklist, ChecklistItem } from './checklist';
+import { getListableRootElement, isListableSite, parseElement, parseQueryParams } from './parse';
+import { ChecklistItem } from './checklist';
+import { loadChecklist, sendSaveMessage } from './storage';
 
-const STORAGE_KEY = '__LISTIFY__CHECKLIST_ITEMS';
-const STORAGE_COUNT_KEY = '__LISTIFY__CHECKLIST_COUNT';
+export const STORAGE_KEY = '__LISTIFY__CHECKLIST_ITEMS';
+export const STORAGE_COUNT_KEY = '__LISTIFY__CHECKLIST_COUNT';
 
 const current = window.location.hostname;
 const params = parseQueryParams();
@@ -42,11 +43,13 @@ function populateChecklistFromPage(checklist) {
       try {
         const content = parseElement(item, 'google');
 
-        checklist.addItem(
-          ChecklistItem({ content })
-        );
+        if (content) {
+          checklist.addItem(
+            ChecklistItem({ content })
+          );
 
-        sendSaveMessage(STORAGE_COUNT_KEY, checklist.counter);
+          sendSaveMessage(STORAGE_COUNT_KEY, checklist.counter);
+        }
 
       } catch (err) {
         console.warn('Encountered an error while trying to scrape search result', err.message);
@@ -158,72 +161,4 @@ function handleTextareaChange(event, element, checklist, checklistItem) {
     STORAGE_KEY,
     checklist.getItems(),
   );
-}
-
-async function loadChecklist() {
-  const counter = await loadCounterFromStorage();
-  const items = await loadChecklistFromStorage(STORAGE_KEY);
-
-  if (items) {
-    return new Checklist(items, counter);
-  } else {
-    return new Checklist([], counter);
-  }
-}
-
-async function loadChecklistFromStorage() {
-  const items = await getStoredValue(STORAGE_KEY);
-
-  if (items) {
-    return items;
-  } else {
-    return null;
-  }
-}
-
-async function loadCounterFromStorage() {
-  let counter = await getStoredValue(STORAGE_COUNT_KEY);
-
-  if (counter) {
-    return counter;
-  } else {
-    return 1;
-  }
-}
-
-async function getStoredValue(key) {
-  return await sendRetrieveMessage(key);
-}
-
-function sendRetrieveMessage(key) {
-  return new Promise(resolve => {
-    chrome.runtime.sendMessage(
-      {
-        type: 'RETRIEVE',
-        payload: {
-          key,
-        }
-      },
-      response => {
-        resolve(response);
-      }
-    )
-  });
-}
-
-function sendSaveMessage(key, value) {
-  return new Promise(resolve => {
-    chrome.runtime.sendMessage(
-      {
-        type: 'SAVE',
-        payload: {
-          key,
-          value
-        },
-      },
-      response => {
-        console.info('Successfully saved Listify checklist');
-      }
-    );
-  });
 }
